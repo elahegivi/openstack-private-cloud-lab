@@ -3,67 +3,69 @@
 
 ## 1. Overview
 
-Glance is the OpenStack Image service. It manages virtual machine images and makes them available to other OpenStack services, including Nova.
+Glance is the OpenStack Image service responsible for storing, discovering, and managing virtual machine images.
 
-Images contain the operating system and supporting configuration needed to boot virtual machines.
+It provides an image catalog that other OpenStack services, including Nova, can use for virtual machine provisioning.
 
-This document describes image management, image formats, upload procedures, verification, and troubleshooting for a proposed private cloud lab.
-
-**Status:** Documentation and CLI examples prepared. Lab validation pending.
+This document covers Glance architecture, image formats, upload procedures, image management, security, and troubleshooting.
 
 ## 2. Glance Architecture
 
 ```mermaid
 flowchart TD
     ADMIN["Cloud Administrator"]
-    CLI["Horizon / OpenStack CLI"]
+    CLIENT["Horizon / OpenStack CLI"]
     KEYSTONE["Keystone Identity"]
     GLANCE["Glance Image API"]
     STORAGE["Image Storage Backend"]
     NOVA["Nova Compute"]
     VM["Virtual Machine"]
 
-    ADMIN --> CLI
-    CLI --> KEYSTONE
-    CLI --> GLANCE
+    ADMIN --> CLIENT
+    CLIENT --> KEYSTONE
+    CLIENT --> GLANCE
     GLANCE --> STORAGE
     NOVA --> GLANCE
     NOVA --> VM
 ```
 
-This is a simplified logical architecture. Actual image retrieval and caching depend on the deployment configuration.
+The diagram illustrates the logical relationship between image administration, image storage, and instance provisioning.
+
+Image retrieval, caching, and storage access depend on the OpenStack deployment configuration.
 
 ## 3. Core Concepts
 
-| Concept | Description |
+| Component | Description |
 |---|---|
-| Image | Bootable virtual machine disk image |
+| Image | Virtual disk image used for instance provisioning |
 | Image ID | Unique identifier assigned by Glance |
-| Disk Format | Format of the virtual disk data |
+| Disk Format | Format of the stored virtual disk |
 | Container Format | Packaging information for the image |
-| Visibility | Controls which projects can discover an image |
-| Image Status | Indicates the image lifecycle state |
-| Storage Backend | Stores image data |
+| Visibility | Controls image discovery and access |
+| Image Status | Indicates image lifecycle state |
+| Storage Backend | Provides storage for image data |
 
-## 4. Common Image Formats
+## 4. Image Formats
 
 ### QCOW2
 
-QCOW2 is a QEMU disk image format commonly used with KVM-based virtualization.
+QCOW2 is a QEMU disk image format commonly used with KVM virtualization.
+
+It supports features such as copy-on-write and dynamically allocated storage.
 
 ### RAW
 
-RAW images represent unstructured virtual disk data and are supported by many virtualization platforms.
+RAW images contain unstructured virtual disk data and are supported by multiple virtualization technologies.
 
 ### Container Format
 
-The `bare` container format is commonly used for standard virtual machine disk images.
+The `bare` container format is commonly used for standard virtual machine images.
 
-Supported formats and operational restrictions depend on the configured cloud.
+Supported formats and operational restrictions depend on the cloud configuration.
 
-## 5. Proposed Lab Scenario
+## 5. Image Administration Scenario
 
-The lab will use an official Linux cloud image to provision virtual machines.
+The example uses a Linux cloud image for virtual machine provisioning.
 
 | Resource | Example |
 |---|---|
@@ -74,18 +76,18 @@ The lab will use an official Linux cloud image to provision virtual machines.
 | Target Instance | lab-vm01 |
 | Compute Service | Nova |
 
-The actual operating system version and image source will be selected during lab setup.
+These resource names are illustrative and should correspond to the actual cloud configuration when commands are executed.
 
 ## 6. Prerequisites
 
-Before uploading an image:
+Image administration requires:
 
-- Authenticate to a working OpenStack cloud.
-- Verify Glance service availability.
-- Download an image from an official, trusted source.
-- Confirm that the image format is supported.
-- Verify available image storage and quotas.
-- Confirm permission to upload images.
+- Access to the OpenStack Image service
+- OpenStackClient installed
+- Valid authentication credentials
+- Appropriate permissions for image management
+- Sufficient image storage and quota
+- A compatible virtual disk image
 
 Verify authentication:
 
@@ -93,13 +95,13 @@ Verify authentication:
 openstack token issue
 ```
 
-List available images:
+List images:
 
 ```bash
 openstack image list
 ```
 
-Inspect the Image service endpoint:
+Inspect Image service endpoints:
 
 ```bash
 openstack endpoint list --service image
@@ -107,33 +109,31 @@ openstack endpoint list --service image
 
 ## 7. Image Download and Verification
 
-Download a suitable Linux cloud image from the operating system's official distribution site.
+Obtain a Linux cloud image from an official, trusted distribution source.
 
-Save it locally as:
+For the example below, save a compatible QCOW2 image as:
 
 `ubuntu-lab.qcow2`
 
-The filename is illustrative; do not assume that a downloaded file is QCOW2 merely because of its extension.
-
-Inspect the downloaded image:
+Inspect its actual format:
 
 ```bash
 qemu-img info ubuntu-lab.qcow2
 ```
 
-Verify the file checksum against the checksum published by the trusted source.
-
-Example:
+Calculate its checksum:
 
 ```bash
 sha256sum ubuntu-lab.qcow2
 ```
 
-Do not upload an image with an unverified origin or unknown contents.
+Compare the checksum with the checksum published by the trusted image provider.
+
+A filename extension alone does not verify the actual image format or integrity.
 
 ## 8. Upload an Image
 
-Upload a private QCOW2 image:
+Create a private image:
 
 ```bash
 openstack image create ubuntu-lab-image \
@@ -143,29 +143,29 @@ openstack image create ubuntu-lab-image \
   --private
 ```
 
-The specified disk format must match the actual image data.
+The selected disk format must match the image data.
 
-Confirm creation:
+Verify creation:
 
 ```bash
 openstack image show ubuntu-lab-image
 ```
 
-## 9. Verify Image Status
+## 9. Image Status and Inspection
 
-List images:
+List available images:
 
 ```bash
 openstack image list
 ```
 
-Inspect image properties:
+Inspect image details:
 
 ```bash
 openstack image show ubuntu-lab-image
 ```
 
-Check the status:
+Display selected properties:
 
 ```bash
 openstack image show ubuntu-lab-image \
@@ -175,31 +175,33 @@ openstack image show ubuntu-lab-image \
   -c size
 ```
 
-An image generally needs to reach the `active` state before it can be used to create a virtual machine.
+An image generally must reach the `active` status before it can be used to create a virtual machine.
 
 ## 10. Image Visibility
 
-Common visibility options include:
+Common visibility settings include:
 
 - private
 - shared
 - community
 - public
 
-Availability and permission to change visibility depend on the deployed Glance policies.
+Image visibility determines discovery and access behavior according to Glance policies and project permissions.
 
-The lab uses a private image to limit access to the intended project.
+Private images are associated with the owning project.
 
-Inspect visibility:
+Inspect the visibility setting:
 
 ```bash
 openstack image show ubuntu-lab-image \
   -c visibility
 ```
 
-## 11. Image Properties
+Image sharing and public visibility changes may require additional permissions.
 
-Additional image metadata can describe operating system information and virtualization requirements.
+## 11. Image Metadata
+
+Glance supports image properties that describe operating system information and other attributes.
 
 Example:
 
@@ -209,17 +211,19 @@ openstack image set \
   ubuntu-lab-image
 ```
 
-Inspect the updated metadata:
+Inspect metadata:
 
 ```bash
 openstack image show ubuntu-lab-image
 ```
 
-Metadata values should accurately represent the image.
+Image metadata should accurately represent the operating system and technical requirements of the image.
 
-## 12. Launch an Instance Using the Image
+## 12. Instance Provisioning with Glance
 
-After configuring Nova, Neutron, and the required resources, provision a test instance:
+Nova uses Glance images during instance provisioning.
+
+Example:
 
 ```bash
 openstack server create \
@@ -231,19 +235,19 @@ openstack server create \
   lab-vm01
 ```
 
-Verify:
+Verify the instance:
 
 ```bash
 openstack server show lab-vm01
 ```
 
-The flavor, network, security group, and key pair must already exist.
+The selected flavor, network, security group, and key pair must exist.
 
-Successful instance provisioning also depends on image compatibility with the hypervisor and resource allocation.
+Image architecture and virtual hardware requirements must also be compatible with the available compute resources.
 
-## 13. Save an Existing Image
+## 13. Download an Existing Image
 
-If permitted, download an existing image:
+Download an image when authorized:
 
 ```bash
 openstack image save \
@@ -251,34 +255,39 @@ openstack image save \
   ubuntu-lab-image
 ```
 
-Confirm the image's actual disk format before choosing the output filename or using the downloaded file.
+Verify the image format after downloading.
 
-Avoid distributing images that contain credentials, private information, or proprietary software without authorization.
+The output filename should correspond to the actual disk format.
 
-## 14. Delete an Image
+Avoid distributing images containing credentials, proprietary software, or sensitive information without authorization.
 
-Delete a lab image only after confirming that it is no longer required:
+## 14. Image Deletion
+
+Delete an image:
 
 ```bash
 openstack image delete ubuntu-lab-image
 ```
 
-Deletion removes the image from the cloud image service and may affect future instance provisioning or rebuild operations.
+Image deletion is destructive and can prevent future instance creation or rebuild operations that depend on the image.
+
+Review image ownership, dependencies, and retention requirements before deletion.
 
 ## 15. Troubleshooting
 
-### Image Upload Fails
+### Image Upload Failure
 
-Check:
+Possible causes:
 
-- Authentication and authorization
-- Image service availability
-- Storage capacity and image quotas
+- Authentication or authorization failure
+- Glance API unavailability
+- Insufficient storage capacity
+- Image quota restrictions
+- Unsupported disk format
 - Upload limits
-- Image file integrity
-- Supported disk format
+- Corrupted image files
 
-Useful commands:
+Commands:
 
 ```bash
 openstack token issue
@@ -286,30 +295,37 @@ openstack image list
 openstack endpoint list --service image
 ```
 
-### Image Is Not Active
+Review service logs and storage backend availability where authorized.
 
-Inspect:
+### Image Does Not Reach ACTIVE
+
+Inspect the image:
 
 ```bash
 openstack image show ubuntu-lab-image
 ```
 
-Check Glance service logs where administrative access is available.
+Review:
 
-A failed upload, unavailable storage backend, or image validation error may prevent activation.
+- Image status
+- Storage backend connectivity
+- Available storage capacity
+- Image validation errors
+- Glance service logs
 
 ### Instance Cannot Boot from Image
 
 Check:
 
-- Image status and format
-- Image architecture
+- Image format and status
+- Operating system architecture
 - Hypervisor compatibility
-- Flavor disk and memory settings
+- Flavor resources
 - Boot configuration
-- Nova and compute service logs
+- Nova instance events
+- Compute service logs
 
-Useful commands:
+Commands:
 
 ```bash
 openstack image show ubuntu-lab-image
@@ -317,51 +333,73 @@ openstack flavor show lab.small
 openstack server show lab-vm01
 ```
 
-### Image Is Not Visible to a User
+### Image Not Visible to a User
 
-Check:
+Verify:
 
 - Image visibility
-- Project membership
+- Owning project
+- Project access
 - Keystone role assignments
 - Image sharing configuration
 - Glance policies
 
+Use an authenticated session with appropriate permissions to inspect the image.
+
 ## 16. Security Considerations
 
-- Use official and trusted image sources.
-- Validate checksums before upload.
-- Apply required operating system updates.
+- Download images from trusted sources.
+- Verify checksums and image integrity.
+- Use supported operating system versions.
+- Apply security updates to base images.
 - Remove embedded passwords and private keys.
-- Avoid storing production data in reusable images.
-- Restrict image visibility appropriately.
-- Use image metadata and versioning consistently.
-- Follow organizational image retention policies.
+- Avoid including confidential data in reusable images.
+- Restrict visibility appropriately.
+- Review image permissions.
+- Maintain consistent image naming and metadata.
+- Follow image retention policies.
 
-## 17. Lab Validation Checklist
+## 17. Operational Verification Checklist
 
-- [ ] Verify Glance API availability
+### Image Service
+
+- [ ] Verify Glance API access
+- [ ] Inspect available images
+- [ ] Verify Image service endpoints
+- [ ] Inspect storage backend availability
+
+### Image Management
+
 - [ ] Obtain a trusted Linux cloud image
 - [ ] Verify checksum and disk format
-- [ ] Upload the image to Glance
-- [ ] Verify image status is active
+- [ ] Upload an image
+- [ ] Verify image status
 - [ ] Inspect image metadata
-- [ ] Verify image visibility
-- [ ] Launch a test VM using Nova
-- [ ] Verify the guest operating system boots
-- [ ] Capture sanitized execution logs
-- [ ] Document troubleshooting results
+- [ ] Confirm image visibility
 
-## 18. Current Status
+### Compute Integration
 
-The image management workflow and CLI commands in this document are prepared for an isolated OpenStack lab.
+- [ ] Select a compatible flavor
+- [ ] Provision an instance using the image
+- [ ] Verify operating system startup
+- [ ] Inspect instance status and events
 
-The commands have not yet been executed or validated as part of this public portfolio repository.
+### Troubleshooting
 
-Actual deployment evidence will be added after testing.
+- [ ] Investigate an image upload failure
+- [ ] Review image storage availability
+- [ ] Investigate an image compatibility issue
+- [ ] Document diagnostic findings and corrective actions
 
-## References
+## 18. Related Documentation
 
+- [OpenStack Architecture](architecture.md)
+- [Nova Compute Management](nova-compute.md)
+- [Keystone Identity Management](keystone-identity.md)
+- [Operations and Troubleshooting](troubleshooting.md)
+
+## 19. References
+
+- [OpenStack Glance Documentation](https://docs.openstack.org/glance/latest/)
 - [OpenStackClient Image Commands](https://docs.openstack.org/python-openstackclient/latest/cli/command-objects/image/v2/index.html)
-- [Glance Image Service Documentation](https://docs.openstack.org/glance/latest/)
 - [OpenStack Image Service API](https://docs.openstack.org/api-ref/image/v2/)
