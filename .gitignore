@@ -1,0 +1,62 @@
+
+# OpenStack Private Cloud Lab
+# Local artifacts and sensitive files
+
+# Generated inventory and operational reports
+reports/
+**/reports/
+*.log
+
+# OpenStack credentials and RC files
+openrc
+openrc.sh
+*-openrc
+*-openrc.sh
+*openrc*.env
+clouds.yaml
+secure.yaml
+clouds-public.yaml
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.secret
+*.secrets
+
+# Private keys and certificates
+*.pem
+*.key
+id_rsa
+id_ed25519
+id_ecdsa
+*.p12
+*.pfx
+
+# Virtual machine images and disks
+*.qcow2
+*.vmdk
+*.vdi
+*.vhd
+*.vhdx
+*.raw
+*.img
+*.iso
+
+# Python temporary files
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editor and operating system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
