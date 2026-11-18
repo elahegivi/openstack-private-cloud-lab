@@ -3,20 +3,18 @@
 
 ## 1. Overview
 
-Cinder is the OpenStack Block Storage service. It provisions persistent block storage volumes that can be attached to virtual machine instances.
+Cinder is the OpenStack Block Storage service responsible for provisioning and managing persistent block storage volumes.
 
-Unlike instance ephemeral storage, Cinder volumes can normally remain available after an instance is deleted, depending on the volume's lifecycle settings and cloud policies.
+Cinder volumes can be attached to virtual machine instances and managed independently from their ephemeral storage.
 
-This document describes a proposed block storage lab covering volume creation, attachment, snapshots, capacity expansion, and troubleshooting.
-
-**Status:** Configuration examples prepared. Lab validation pending.
+This document covers block storage architecture, volume provisioning, attachment, snapshots, capacity expansion, operational security, and troubleshooting.
 
 ## 2. Cinder Architecture
 
 ```mermaid
 flowchart TD
     ADMIN["Cloud Administrator"]
-    CLI["Horizon / OpenStack CLI"]
+    CLIENT["Horizon / OpenStack CLI"]
     API["Cinder API"]
     SCHED["Cinder Scheduler"]
     VOL["Cinder Volume Service"]
@@ -24,59 +22,60 @@ flowchart TD
     NOVA["Nova Compute"]
     VM["Virtual Machine"]
 
-    ADMIN --> CLI
-    CLI --> API
+    ADMIN --> CLIENT
+    CLIENT --> API
     API --> SCHED
     SCHED --> VOL
     VOL --> BACKEND
-    NOVA --> VOL
+    NOVA <--> VOL
     NOVA --> VM
-    VM -. "Attached block device" .-> BACKEND
+    VM -. "Block Storage Access" .-> BACKEND
 ```
 
-This diagram is conceptual. The actual data path and attachment mechanism depend on the selected Cinder storage driver and backend.
+The diagram illustrates logical service relationships. Actual storage data paths depend on the selected storage driver, backend, and attachment protocol.
 
 ## 3. Core Components
 
 | Component | Responsibility |
 |---|---|
-| Cinder API | Handles block storage API requests |
-| Cinder Scheduler | Selects a suitable storage backend |
-| Cinder Volume | Manages volume lifecycle and backend operations |
-| Storage Backend | Stores block volume data |
-| Volume Type | Defines storage characteristics and backend selection |
+| Cinder API | Processes block storage API requests |
+| Cinder Scheduler | Selects suitable storage backends |
+| Cinder Volume | Manages storage volumes and backend operations |
+| Storage Backend | Provides physical or virtual block storage |
+| Volume Type | Defines storage capabilities and backend selection |
 | Nova Compute | Coordinates volume attachment to instances |
 
-Possible storage backends include LVM, Ceph RBD, and supported storage arrays.
+Supported storage technologies may include LVM, Ceph RBD, iSCSI storage, and compatible enterprise storage arrays.
 
-The final lab backend will be selected during deployment.
+## 4. Block Storage Administration Scenario
 
-## 4. Proposed Lab Scenario
+The following configuration demonstrates persistent storage management for a Linux virtual machine.
 
 | Resource | Example |
 |---|---|
 | Project | infrastructure-lab |
 | Instance | lab-vm01 |
 | Volume | lab-data-volume |
-| Initial Size | 10 GiB |
-| Expanded Size | 20 GiB |
+| Initial Capacity | 10 GiB |
+| Expanded Capacity | 20 GiB |
 | Snapshot | lab-data-snapshot |
-| Volume Purpose | Persistent application data |
+| Restored Volume | lab-restored-volume |
+| Purpose | Persistent application data |
 
-The volume is a separate block device, not the instance's root disk.
+The data volume is separate from the virtual machine's root disk.
 
 ## 5. Prerequisites
 
-Before beginning:
+Volume administration requires:
 
-- Authenticate to a working OpenStack deployment.
-- Verify that Cinder is available.
-- Confirm that a storage backend is configured.
-- Confirm sufficient storage quota and capacity.
-- Prepare the VM `lab-vm01`.
-- Ensure the selected volume type is accessible.
+- A working OpenStack Block Storage service
+- Valid OpenStack authentication
+- A configured storage backend
+- Sufficient storage capacity and quota
+- Appropriate volume management permissions
+- An available virtual machine for attachment
 
-Check authentication:
+Verify authentication:
 
 ```bash
 openstack token issue
@@ -88,21 +87,21 @@ List volumes:
 openstack volume list
 ```
 
-List available volume types:
+List volume types:
 
 ```bash
 openstack volume type list
 ```
 
-Administrators can inspect Cinder services:
+Inspect storage services where authorized:
 
 ```bash
 openstack volume service list
 ```
 
-## 6. Create a Volume
+## 6. Volume Creation
 
-Create a 10 GiB volume:
+Create a 10 GiB data volume:
 
 ```bash
 openstack volume create \
@@ -111,21 +110,23 @@ openstack volume create \
   lab-data-volume
 ```
 
-Verify its status:
+Verify:
 
 ```bash
 openstack volume show lab-data-volume
 ```
 
-Expected status before attachment:
+A successfully provisioned, unattached volume normally reaches the `available` status.
 
-`available`
+Inspect all volumes:
 
-A different status may indicate that provisioning is still in progress or has failed.
+```bash
+openstack volume list
+```
 
-## 7. Attach Volume to an Instance
+## 7. Volume Attachment
 
-Attach the volume to `lab-vm01`:
+Attach the volume to a virtual machine:
 
 ```bash
 openstack server add volume \
@@ -139,27 +140,25 @@ openstack volume show lab-data-volume
 openstack server volume list lab-vm01
 ```
 
-Expected attached-volume status:
+An attached volume normally reports the `in-use` status.
 
-`in-use`
+The guest operating system must detect the newly attached block device before it can be used.
 
-The guest operating system must still detect and prepare the new block device.
+## 8. Linux Filesystem Configuration
 
-## 8. Configure Storage Inside Linux
-
-Connect to the test VM and identify the disk:
+Connect to the virtual machine and inspect available disks:
 
 ```bash
 lsblk -f
 ```
 
-For a newly created, empty data volume, the lab may create a filesystem.
+Identify the newly attached, empty data volume.
 
-**Warning:** The following operations are destructive if executed against the wrong device.
+**Warning:** Formatting a disk destroys existing filesystem data. Confirm the correct device before continuing.
 
-Verify the device name and confirm that the disk contains no data before proceeding.
+The following example assumes the data disk appears as `/dev/vdb`.
 
-Example only, assuming the attached disk appears as `/dev/vdb`:
+Create an ext4 filesystem:
 
 ```bash
 sudo mkfs.ext4 /dev/vdb
@@ -171,7 +170,7 @@ Create a mount point:
 sudo mkdir -p /mnt/lab-data
 ```
 
-Mount the volume:
+Mount the filesystem:
 
 ```bash
 sudo mount /dev/vdb /mnt/lab-data
@@ -184,34 +183,61 @@ df -h /mnt/lab-data
 lsblk -f
 ```
 
-Device naming varies by hypervisor, interface, and guest operating system.
+Device names can vary between virtualization environments.
 
-For persistent mounting, use the filesystem UUID in `/etc/fstab` rather than relying on a potentially changing device name.
+For persistent mounting, use the filesystem UUID in `/etc/fstab` rather than relying on a device name.
 
-## 9. Create a Test File
+## 9. Data Persistence Verification
 
-Inside the guest:
+Write a test file to the attached volume:
 
 ```bash
 echo "OpenStack Cinder persistent storage test" \
   | sudo tee /mnt/lab-data/test.txt
 ```
 
-Verify the file:
+Verify its contents:
 
 ```bash
 cat /mnt/lab-data/test.txt
 ```
 
-This provides a simple reference point for later persistence checks.
+Confirm that the file resides on the expected mounted volume:
 
-## 10. Create a Volume Snapshot
+```bash
+df -h /mnt/lab-data
+```
 
-Snapshots capture a point-in-time state of a volume.
+A volume can be safely detached and attached again to verify that stored data remains accessible.
 
-For a consistent lab snapshot, stop writes and detach the volume before creating a snapshot.
+## 10. Volume Snapshots
 
-For a detached volume:
+Cinder snapshots represent point-in-time copies of volume data.
+
+For application-consistent snapshots, coordinate with the application and ensure that pending writes are handled appropriately.
+
+A straightforward procedure uses a detached volume.
+
+First, stop application writes and unmount the filesystem inside the guest:
+
+```bash
+sudo umount /mnt/lab-data
+```
+
+Detach the volume from OpenStack:
+
+```bash
+openstack server remove volume \
+  lab-vm01 lab-data-volume
+```
+
+Confirm the volume reaches `available`:
+
+```bash
+openstack volume show lab-data-volume
+```
+
+Create the snapshot:
 
 ```bash
 openstack volume snapshot create \
@@ -231,11 +257,11 @@ Inspect the snapshot:
 openstack volume snapshot show lab-data-snapshot
 ```
 
-Depending on the storage driver and API permissions, snapshots of attached volumes may require additional options or backend capabilities.
+Some storage backends support snapshots of attached volumes with additional capabilities or options.
 
-A snapshot is not a substitute for an independent, tested backup.
+Snapshots should not be treated as a replacement for independent backups.
 
-## 11. Restore Data Using a Snapshot
+## 11. Restore a Volume from a Snapshot
 
 Create a new volume from the snapshot:
 
@@ -246,24 +272,41 @@ openstack volume create \
   lab-restored-volume
 ```
 
-Verify:
+Inspect the restored volume:
 
 ```bash
 openstack volume show lab-restored-volume
 ```
 
-The resulting volume can be attached to a suitable test instance to verify data recovery.
+Attach the restored volume to a suitable instance:
 
-Do not overwrite an existing volume during recovery testing.
+```bash
+openstack server add volume \
+  lab-vm01 lab-restored-volume
+```
 
-## 12. Expand Volume Capacity
+Inspect available devices inside the guest:
 
-Volume expansion is a two-part process:
+```bash
+lsblk -f
+```
 
-1. Increase the size of the Cinder volume.
-2. Expand the partition or filesystem inside the guest.
+Identify the restored filesystem and mount it using its actual device path or UUID.
 
-For a detached volume that is in the `available` state:
+Do not format the restored volume, because doing so would destroy the recovered filesystem.
+
+Verify that the test file and expected data are present.
+
+## 12. Volume Capacity Expansion
+
+Increasing a volume's capacity involves two separate operations:
+
+1. Expand the Cinder volume.
+2. Expand the guest-side partition or filesystem.
+
+### Step 1 — Expand the Cinder Volume
+
+For a detached volume in the `available` state:
 
 ```bash
 openstack volume set \
@@ -271,85 +314,109 @@ openstack volume set \
   lab-data-volume
 ```
 
-Verify:
+Verify the new capacity:
 
 ```bash
 openstack volume show lab-data-volume
 ```
 
-After reattaching the volume, inspect the block device:
+The requested size must be greater than the existing size.
+
+### Step 2 — Expand the Guest Filesystem
+
+Attach the expanded volume to the virtual machine:
+
+```bash
+openstack server add volume \
+  lab-vm01 lab-data-volume
+```
+
+Inspect the disk:
 
 ```bash
 lsblk
 ```
 
-If the ext4 filesystem was created directly on the block device and the device is `/dev/vdb`, an example guest-side expansion is:
+For an ext4 filesystem created directly on `/dev/vdb`, expand the filesystem:
 
 ```bash
 sudo resize2fs /dev/vdb
 ```
 
-Verify:
+Mount it if necessary:
+
+```bash
+sudo mount /dev/vdb /mnt/lab-data
+```
+
+Verify the available capacity:
 
 ```bash
 df -h /mnt/lab-data
 ```
 
-If the volume uses partitions, LVM, XFS, or another layout, different expansion procedures are required.
+Different procedures are required for partitioned disks, LVM, XFS, or other filesystem layouts.
 
-Online expansion support also depends on the selected Cinder backend, guest operating system, and cloud configuration.
+Online expansion capabilities also depend on the storage backend and operating system.
 
-## 13. Detach a Volume
+## 13. Safe Volume Detachment
 
-Before detaching, stop application writes and unmount the filesystem inside the guest:
+Before detaching a data volume:
+
+1. Stop application writes.
+2. Confirm that no processes are using the filesystem.
+3. Unmount the filesystem.
+4. Detach the volume through OpenStack.
+
+Unmount inside the guest:
 
 ```bash
 sudo umount /mnt/lab-data
 ```
 
-Then detach it through OpenStack:
+Detach:
 
 ```bash
 openstack server remove volume \
   lab-vm01 lab-data-volume
 ```
 
-Check the volume status:
+Verify:
 
 ```bash
 openstack volume show lab-data-volume
 ```
 
-The volume should return to `available` when detachment completes.
+The volume should return to `available` after successful detachment.
 
-Never detach a device that contains an active mounted filesystem without a safe shutdown or unmount procedure.
+Detaching an actively used block device can cause data corruption.
 
-## 14. Delete a Volume
+## 14. Volume Deletion
 
-Confirm the volume is detached and contains no required data.
+Confirm that the volume is no longer required, is detached, and contains no data that must be retained.
 
-Then delete it:
+Delete:
 
 ```bash
 openstack volume delete lab-data-volume
 ```
 
-Deletion is destructive.
+Volume deletion is destructive.
 
-Snapshots, dependencies, policies, or backend conditions may prevent volume deletion.
+Snapshots, backend dependencies, or retention policies may prevent deletion until related resources are addressed.
 
 ## 15. Troubleshooting
 
 ### Volume Remains in Creating State
 
-Check:
+Possible causes:
 
-- Cinder Volume service status
-- Available storage capacity
-- Storage backend connectivity
-- Storage quotas
-- Scheduler placement
-- Relevant Cinder service logs
+- Unavailable Cinder Volume service
+- Insufficient backend capacity
+- Storage backend connectivity issues
+- Quota restrictions
+- Scheduler placement failure
+- Storage driver errors
 
 Commands:
 
@@ -358,16 +425,18 @@ openstack volume show lab-data-volume
 openstack volume service list
 ```
 
+Review Cinder service logs and backend health.
+
 ### Volume Attachment Fails
 
-Check:
+Inspect:
 
-- VM state
-- Volume state
+- Virtual machine status
+- Volume status
 - Compute host connectivity
-- Cinder backend accessibility
-- Volume attachment limits
-- Nova and Cinder logs
+- Storage backend connectivity
+- Volume attachment limitations
+- Nova and Cinder service logs
 
 Commands:
 
@@ -377,26 +446,32 @@ openstack volume show lab-data-volume
 openstack server volume list lab-vm01
 ```
 
-### Guest Cannot See the Disk
+### Attached Disk Is Not Visible Inside Linux
 
-Inside the VM:
+Inspect available devices:
 
 ```bash
 lsblk
+lsblk -f
+```
+
+Review recent kernel messages:
+
+```bash
 sudo dmesg | tail -n 30
 ```
 
-Check the attachment state in OpenStack before modifying guest storage.
+Check the Cinder attachment status and compute host storage connectivity before making guest-side changes.
 
-### Filesystem Reports Insufficient Space
+### Filesystem Capacity Is Incorrect
 
-Check:
+Compare:
 
-- Cloud-side volume size
-- Guest-visible block device size
-- Partition size, if applicable
+- Cinder volume size
+- Guest-visible disk size
+- Partition size
 - Filesystem size
-- Mounted device
+- Mounted filesystem
 
 Commands:
 
@@ -405,46 +480,89 @@ lsblk
 df -h
 ```
 
-Expanding the cloud volume does not automatically guarantee that the guest filesystem has expanded.
+Increasing a Cinder volume does not automatically expand its guest filesystem.
+
+### Snapshot Creation Fails
+
+Check:
+
+- Volume status
+- Storage backend snapshot support
+- Available snapshot quota
+- Snapshot permissions
+- Existing storage dependencies
+- Cinder service logs
+
+Commands:
+
+```bash
+openstack volume show lab-data-volume
+openstack volume snapshot list
+```
 
 ## 16. Operational Best Practices
 
 - Use consistent volume naming conventions.
-- Separate application data from ephemeral instance storage.
-- Monitor volume capacity and performance.
-- Review storage quotas.
-- Test backup and restore procedures.
+- Separate persistent data from ephemeral instance storage.
+- Monitor volume capacity and storage performance.
+- Review storage quotas regularly.
+- Maintain tested backup and recovery procedures.
 - Document volume ownership and dependencies.
-- Restrict administrative permissions.
-- Verify snapshots for application consistency.
-- Avoid committing credentials or internal storage details.
+- Restrict administrative storage permissions.
+- Coordinate snapshots with application consistency requirements.
+- Verify recovered data before completing a restore operation.
+- Avoid exposing confidential storage configuration or credentials.
 
-## 17. Lab Validation Checklist
+## 17. Operational Verification Checklist
 
-- [ ] Verify Cinder API and services
-- [ ] Confirm a working storage backend
-- [ ] Create a 10 GiB data volume
-- [ ] Attach the volume to lab-vm01
-- [ ] Detect the disk inside Linux
+### Block Storage Services
+
+- [ ] Verify Cinder API availability
+- [ ] Inspect Cinder Volume service status
+- [ ] Confirm storage backend connectivity
+- [ ] Review volume types and quotas
+
+### Volume Provisioning
+
+- [ ] Create a data volume
+- [ ] Verify the volume reaches `available`
+- [ ] Attach the volume to an instance
+- [ ] Verify the volume reaches `in-use`
+- [ ] Identify the attached disk inside Linux
+
+### Filesystem Management
+
 - [ ] Create and mount a filesystem
-- [ ] Write and verify test data
-- [ ] Safely detach the volume
-- [ ] Create a snapshot
+- [ ] Verify filesystem capacity
+- [ ] Create and read test data
+- [ ] Verify persistent storage access
+
+### Snapshots and Recovery
+
+- [ ] Safely detach a data volume
+- [ ] Create a volume snapshot
 - [ ] Restore a new volume from the snapshot
-- [ ] Verify restored test data
-- [ ] Expand a volume from 10 GiB to 20 GiB
-- [ ] Verify filesystem expansion
-- [ ] Document sanitized command outputs and screenshots
+- [ ] Attach the restored volume
+- [ ] Verify recovered data
 
-## 18. Current Status
+### Capacity and Troubleshooting
 
-The procedures above are configuration examples for a proposed OpenStack private cloud lab.
+- [ ] Expand a Cinder volume
+- [ ] Expand the guest filesystem
+- [ ] Verify the updated capacity
+- [ ] Investigate an attachment failure
+- [ ] Review storage service logs
+- [ ] Document diagnostic and recovery procedures
 
-They have not been executed or validated in the public portfolio environment.
+## 18. Related Documentation
 
-Actual test results, backend-specific procedures, and troubleshooting evidence will be added after lab deployment.
+- [OpenStack Architecture](architecture.md)
+- [Nova Compute Management](nova-compute.md)
+- [Glance Image Management](glance-images.md)
+- [Keystone Identity Management](keystone-identity.md)
+- [Operations and Troubleshooting](troubleshooting.md)
 
-## References
+## 19. References
 
 - [OpenStack Cinder Documentation](https://docs.openstack.org/cinder/latest/)
 - [OpenStackClient Block Storage Commands](https://docs.openstack.org/python-openstackclient/latest/cli/command-objects/volume/v3/index.html)
