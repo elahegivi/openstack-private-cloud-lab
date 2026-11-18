@@ -3,13 +3,11 @@
 
 ## 1. Overview
 
-Nova is the OpenStack Compute service responsible for managing the lifecycle of virtual machine instances.
+Nova is the OpenStack Compute service responsible for provisioning and managing virtual machine instances.
 
-It coordinates compute resources, schedules instances on available hypervisors, and works with other OpenStack services to provision virtual infrastructure.
+It coordinates compute scheduling, instance lifecycle operations, and integration with virtualization hosts, networking, images, and block storage.
 
-This document describes Nova architecture, instance provisioning, lifecycle operations, and troubleshooting in a proposed private cloud lab.
-
-**Status:** Documentation and CLI examples prepared. Lab validation pending.
+This document covers Nova architecture, instance provisioning, lifecycle management, operational monitoring, and troubleshooting.
 
 ## 2. Nova Architecture
 
@@ -18,19 +16,21 @@ flowchart TD
     USER["Cloud Administrator"]
     API["Nova API"]
     SCH["Nova Scheduler"]
+    PLACE["Placement API"]
     COND["Nova Conductor"]
     COMPUTE["Nova Compute"]
     HYP["KVM / libvirt"]
-    VM["Virtual Machine Instance"]
+    VM["Virtual Machine"]
 
-    KEYSTONE["Keystone Identity"]
-    GLANCE["Glance Images"]
-    NEUTRON["Neutron Networking"]
-    CINDER["Cinder Storage"]
+    KEYSTONE["Keystone"]
+    GLANCE["Glance"]
+    NEUTRON["Neutron"]
+    CINDER["Cinder"]
 
     USER --> API
     API --> KEYSTONE
     API --> SCH
+    SCH <--> PLACE
     SCH --> COND
     COND --> COMPUTE
     COMPUTE --> HYP
@@ -41,26 +41,26 @@ flowchart TD
     COMPUTE --> CINDER
 ```
 
-This diagram represents a simplified Nova workflow. Actual service communication and scheduling depend on the OpenStack release and deployment architecture.
+The diagram provides a simplified representation of Nova components and their relationships.
+
+Actual internal communication depends on the OpenStack release and deployment configuration.
 
 ## 3. Core Components
 
 | Component | Responsibility |
 |---|---|
-| Nova API | Handles compute API requests |
-| Nova Scheduler | Selects a suitable compute host |
-| Nova Conductor | Coordinates database-related operations and compute workflows |
-| Nova Compute | Manages instance lifecycle on compute hosts |
-| Placement | Tracks resource inventories and allocations |
+| Nova API | Processes compute API requests |
+| Nova Scheduler | Selects suitable compute hosts |
+| Placement | Maintains resource inventories and allocations |
+| Nova Conductor | Coordinates compute workflows and database access |
+| Nova Compute | Manages instances on compute hosts |
 | KVM / libvirt | Provides virtualization capabilities |
 
-Nova integrates with Keystone, Glance, Neutron, and optionally Cinder during instance provisioning.
+Nova integrates with Keystone for authentication, Glance for images, Neutron for networking, and Cinder for persistent block storage.
 
-## 4. Proposed Lab Scenario
+## 4. Compute Administration Scenario
 
-The lab will provision a small Linux virtual machine in the `infrastructure-lab` project.
-
-Example resources:
+The following example demonstrates provisioning and managing a Linux instance within a dedicated OpenStack project.
 
 | Resource | Example |
 |---|---|
@@ -72,20 +72,20 @@ Example resources:
 | Security Group | lab-ssh |
 | Key Pair | lab-key |
 
-All names are illustrative. The required resources must exist before instance creation.
+The resource names are illustrative and must correspond to existing cloud resources when executing the commands.
 
 ## 5. Prerequisites
 
-A working lab deployment must provide:
+Instance provisioning requires:
 
-- OpenStack authentication
-- A configured compute service
-- Available compute capacity
-- A usable image in Glance
-- A flavor
-- A Neutron network
-- A suitable security group
-- An SSH key pair, if key-based access is required
+- A working OpenStack Compute service
+- Valid authentication credentials
+- Available compute resources
+- A compatible image
+- An appropriate flavor
+- A configured Neutron network
+- A security group
+- An SSH key pair, if required
 
 Verify authentication:
 
@@ -93,7 +93,7 @@ Verify authentication:
 openstack token issue
 ```
 
-Verify available compute services:
+Inspect compute services:
 
 ```bash
 openstack compute service list
@@ -105,7 +105,7 @@ List hypervisors:
 openstack hypervisor list
 ```
 
-Some commands require elevated permissions depending on cloud policy.
+Administrative permissions may be required for infrastructure-level inspection commands.
 
 ## 6. Image Management
 
@@ -115,32 +115,32 @@ List available images:
 openstack image list
 ```
 
-Inspect an image:
+Inspect the selected image:
 
 ```bash
 openstack image show ubuntu-lab-image
 ```
 
-Image upload and management are documented separately in the Glance module.
+Image creation, upload, and management are covered in the Glance documentation.
 
 ## 7. Flavor Management
 
-A flavor defines the virtual hardware profile of an instance.
+A flavor defines the virtual hardware resources allocated to an instance.
 
-Typical attributes include:
+Typical properties include:
 
 - Virtual CPUs
-- RAM
+- Memory
 - Root disk size
-- Additional resource properties
+- Additional resource specifications
 
-List available flavors:
+List flavors:
 
 ```bash
 openstack flavor list
 ```
 
-Example flavor creation (requires appropriate permissions):
+Create a sample flavor:
 
 ```bash
 openstack flavor create \
@@ -150,15 +150,17 @@ openstack flavor create \
   lab.small
 ```
 
-Check the flavor:
+Verify:
 
 ```bash
 openstack flavor show lab.small
 ```
 
-The example requires an image and compute environment compatible with the selected disk and memory allocation.
+Flavor creation is usually restricted to authorized administrators.
 
-## 8. SSH Key Pair
+The image, compute host, and selected flavor must be compatible.
+
+## 8. SSH Key Pair Management
 
 Import an existing public SSH key:
 
@@ -168,29 +170,27 @@ openstack keypair create \
   lab-key
 ```
 
-Verify:
+List key pairs:
 
 ```bash
 openstack keypair list
 ```
 
-Only public keys should be imported or shared.
+Only public keys should be uploaded to OpenStack.
 
-Never commit private SSH keys to the repository.
+Private SSH keys must remain protected and must not be committed to source control.
 
-## 9. Security Group
+## 9. Security Group Configuration
 
-Create an example security group:
+Create a dedicated security group:
 
 ```bash
 openstack security group create \
-  --description "SSH access for the private cloud lab" \
+  --description "Restricted SSH access" \
   lab-ssh
 ```
 
-Allow SSH access from a restricted management subnet.
-
-The following IP range is documentation-only:
+Allow SSH connectivity from an authorized management network:
 
 ```bash
 openstack security group rule create \
@@ -200,17 +200,23 @@ openstack security group rule create \
   lab-ssh
 ```
 
-Replace the example range with the actual authorized management subnet during lab deployment.
+The source address is a documentation-only example and must be replaced with the correct management subnet.
+
+Verify the rules:
+
+```bash
+openstack security group rule list lab-ssh
+```
 
 ## 10. Instance Provisioning
 
-Before creating an instance, confirm that `private-lab-net` exists:
+Verify the target network:
 
 ```bash
 openstack network show private-lab-net
 ```
 
-Create a VM:
+Create an instance:
 
 ```bash
 openstack server create \
@@ -222,7 +228,7 @@ openstack server create \
   lab-vm01
 ```
 
-Check provisioning status:
+Inspect the instance:
 
 ```bash
 openstack server show lab-vm01
@@ -234,23 +240,23 @@ List instances:
 openstack server list
 ```
 
-Wait for the instance to reach `ACTIVE` before performing connectivity checks.
+After the instance reaches `ACTIVE`, verify operating system startup and network connectivity.
 
 ## 11. Instance Lifecycle Management
 
-### Stop an Instance
+### Stop
 
 ```bash
 openstack server stop lab-vm01
 ```
 
-### Start an Instance
+### Start
 
 ```bash
 openstack server start lab-vm01
 ```
 
-### Reboot an Instance
+### Soft Reboot
 
 ```bash
 openstack server reboot lab-vm01
@@ -262,34 +268,40 @@ openstack server reboot lab-vm01
 openstack server reboot --hard lab-vm01
 ```
 
-A hard reboot should be used cautiously because it can interrupt workloads.
+Hard reboots can interrupt workloads and should be performed only when appropriate.
 
-### Delete an Instance
+### Delete
 
 ```bash
 openstack server delete lab-vm01
 ```
 
-Deletion is destructive and may remove data stored on an ephemeral root disk.
+Instance deletion is destructive. Data on ephemeral storage may be lost.
 
 ## 12. Monitoring and Inspection
 
-List instances:
+List detailed instance information:
 
 ```bash
 openstack server list --long
 ```
 
-Inspect instance details:
+Inspect an instance:
 
 ```bash
 openstack server show lab-vm01
 ```
 
-View console logs:
+View console output:
 
 ```bash
 openstack console log show lab-vm01
+```
+
+List instance events:
+
+```bash
+openstack server event list lab-vm01
 ```
 
 Inspect compute services:
@@ -298,34 +310,39 @@ Inspect compute services:
 openstack compute service list
 ```
 
-Inspect hypervisor resources:
+Inspect hypervisors:
 
 ```bash
 openstack hypervisor list
 ```
 
-Operational monitoring can also incorporate external infrastructure monitoring systems.
+These commands provide operational information about instances and compute infrastructure.
+
+For infrastructure monitoring, Nova can be complemented by external tools such as Zabbix or Netdata.
 
 ## 13. Troubleshooting
 
 ### Instance Remains in BUILD
 
-Check:
+Possible causes include:
 
-- Available compute resources
-- Nova Scheduler and Compute services
-- Image availability
-- Network allocation
-- Compute host connectivity
-- Relevant Nova service logs
+- Insufficient compute resources
+- Scheduling constraints
+- Unavailable compute services
+- Image provisioning issues
+- Network allocation failures
+- Hypervisor problems
 
-Useful commands:
+Investigation commands:
 
 ```bash
 openstack server show lab-vm01
+openstack server event list lab-vm01
 openstack compute service list
 openstack hypervisor list
 ```
+
+Review Nova service logs where administrative access is available.
 
 ### Instance Enters ERROR State
 
@@ -335,55 +352,123 @@ Inspect the instance:
 openstack server show lab-vm01
 ```
 
-Check available fault information:
+Inspect events:
+
+```bash
+openstack server event list lab-vm01
+```
+
+Check available fault details:
 
 ```bash
 openstack server show lab-vm01 -c fault
 ```
 
-Fault details may be restricted by cloud policy.
+Fault information and event details may be restricted by cloud policy.
 
-Also inspect Nova and hypervisor logs where administrative access is available.
+Additional investigation may require access to Nova Compute and hypervisor logs.
 
 ### Instance Has No Network Connectivity
 
-Verify:
-
-- Assigned Neutron ports
-- Network and subnet configuration
-- Security group rules
-- Router and external network configuration
-- Guest operating system networking
-
-Commands:
+Inspect attached network ports:
 
 ```bash
 openstack port list --server lab-vm01
-openstack security group list
-openstack network list
 ```
 
-Detailed connectivity troubleshooting will be documented in the Neutron module.
+Check security group configuration:
 
-## 14. Lab Validation Checklist
+```bash
+openstack security group rule list lab-ssh
+```
 
-- [ ] Verify Nova services
-- [ ] Verify compute host availability
+Inspect networks:
+
+```bash
+openstack network list
+openstack subnet list
+openstack router list
+```
+
+Verify:
+
+- Guest operating system network configuration
+- Neutron port status
+- Security group rules
+- Subnet and gateway settings
+- Virtual router connectivity
+- External network routing
+
+Detailed networking procedures are covered in the Neutron documentation.
+
+### Instance Cannot Boot from an Image
+
+Verify the image:
+
+```bash
+openstack image show ubuntu-lab-image
+```
+
+Check the flavor:
+
+```bash
+openstack flavor show lab.small
+```
+
+Review the instance:
+
+```bash
+openstack server show lab-vm01
+```
+
+Confirm image format, operating system architecture, boot requirements, and hypervisor compatibility.
+
+## 14. Operational Verification Checklist
+
+### Compute Infrastructure
+
+- [ ] Verify Nova API availability
+- [ ] Inspect compute service status
+- [ ] Inspect hypervisor resources
+- [ ] Check available compute capacity
+
+### Instance Provisioning
+
 - [ ] Confirm image availability
-- [ ] Create a lab flavor
-- [ ] Import a public SSH key
-- [ ] Create a security group
-- [ ] Launch lab-vm01
+- [ ] Verify flavor configuration
+- [ ] Verify target network
+- [ ] Configure an SSH key pair
+- [ ] Review security group rules
+- [ ] Provision a virtual machine
 - [ ] Verify ACTIVE state
-- [ ] Inspect instance information
-- [ ] Test stop, start, and reboot operations
-- [ ] Validate network connectivity
-- [ ] Capture sanitized logs and screenshots
+- [ ] Confirm guest operating system startup
 
-## 15. Current Status
+### Lifecycle Operations
 
-This document provides a proposed Nova Compute administration scenario and example OpenStack CLI commands.
+- [ ] Test instance stop and start
+- [ ] Test instance reboot
+- [ ] Inspect console output
+- [ ] Review instance events
 
-The examples have not yet been executed or validated in the public portfolio lab.
+### Troubleshooting
 
-Execution evidence and troubleshooting outcomes will be added after lab testing.
+- [ ] Investigate a provisioning failure
+- [ ] Inspect scheduler and resource constraints
+- [ ] Review networking dependencies
+- [ ] Review relevant service logs
+- [ ] Document corrective actions and verification results
+
+## 15. Related Documentation
+
+- [OpenStack Architecture](architecture.md)
+- [Keystone Identity Management](keystone-identity.md)
+- [Neutron Networking](neutron-networking.md)
+- [Glance Image Management](glance-images.md)
+- [Cinder Block Storage](cinder-storage.md)
+- [Operations and Troubleshooting](troubleshooting.md)
+
+## 16. References
+
+- [OpenStack Nova Documentation](https://docs.openstack.org/nova/latest/)
+- [OpenStackClient Compute Commands](https://docs.openstack.org/python-openstackclient/latest/cli/command-objects/compute/v2/index.html)
+- [OpenStack Documentation](https://docs.openstack.org/)
