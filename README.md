@@ -5,99 +5,117 @@
 
 ## Overview
 
-This repository documents an OpenStack private cloud lab inspired by academic hands-on experience at Hochschule Fulda (Fulda University of Applied Sciences), Germany.
+A technical portfolio focused on OpenStack private cloud architecture, infrastructure administration, virtual networking, compute, storage, identity management, and operational troubleshooting.
 
-The project focuses on understanding, designing, configuring, and troubleshooting private cloud infrastructure using OpenStack.
+The project draws on academic hands-on experience with OpenStack at Hochschule Fulda (Fulda University of Applied Sciences), Germany, and broader IT infrastructure engineering experience.
 
-It combines academic exposure to cloud technologies with an ongoing technical portfolio project.
-
-**Status:** Architecture and configuration documentation in progress. Lab deployment and validation pending.
-
-## Project Objectives
-
-- Design a private cloud architecture.
-- Understand OpenStack core services.
-- Provision and manage virtual machine instances.
-- Configure virtual networks and routing.
-- Explore cloud storage and identity management.
-- Document deployment, operations, and troubleshooting.
-- Validate configurations in an isolated lab.
+It provides architecture documentation, administration procedures, OpenStack CLI examples, and reusable operational scripts.
 
 ## Technology Stack
 
-| Component | OpenStack Service | Purpose |
-|---|---|---|
-| Identity | Keystone | Authentication and authorization |
-| Compute | Nova | Virtual machine management |
-| Networking | Neutron | Virtual networks, routers and security groups |
-| Images | Glance | Virtual machine image management |
-| Block Storage | Cinder | Persistent block storage |
-| Dashboard | Horizon | Web-based cloud management |
-| CLI | OpenStackClient | Command-line infrastructure management |
+| Technology | Purpose |
+|---|---|
+| Keystone | Identity and access management |
+| Nova | Virtual machine lifecycle management |
+| Neutron | Virtual networking and routing |
+| Glance | Virtual machine image management |
+| Cinder | Block storage and volume management |
+| Horizon | Web-based cloud administration |
+| OpenStackClient | Command-line administration |
+| KVM / libvirt | Virtualization infrastructure |
+| Bash | Operational scripting |
 
-## Planned Technical Modules
+## Architecture
 
-### 1. Private Cloud Architecture
+The reference architecture covers:
 
-- Controller and compute node concepts
-- OpenStack service communication
-- Management and provider networks
-- Cloud infrastructure topology
+- OpenStack controller services
+- Compute nodes and hypervisors
+- Management and tenant networking
+- External/provider network connectivity
+- Image and block storage services
+- Identity, authentication, and authorization
 
-### 2. Compute — Nova
+[Explore OpenStack Architecture](docs/architecture.md)
 
-- Instance provisioning
-- Images and flavors
-- Instance lifecycle management
-- Compute troubleshooting
+## Technical Documentation
 
-### 3. Networking — Neutron
+| Module | Description |
+|---|---|
+| [Architecture](docs/architecture.md) | Private cloud components, topology, and service interactions |
+| [Keystone Identity](docs/keystone-identity.md) | Users, projects, roles, and authentication |
+| [Nova Compute](docs/nova-compute.md) | VM provisioning, flavors, lifecycle operations |
+| [Neutron Networking](docs/neutron-networking.md) | Networks, subnets, routers, security groups, and floating IPs |
+| [Glance Images](docs/glance-images.md) | Image upload, formats, verification, and management |
+| [Cinder Storage](docs/cinder-storage.md) | Volumes, attachments, snapshots, and capacity expansion |
+| [Troubleshooting](docs/troubleshooting.md) | Service health checks, incident investigation, and diagnostics |
 
-- Private networks and subnets
-- Virtual routers
-- Floating IP addresses
+## Operational Scripts
+
+### OpenStack Health Check
+
+[View Health Check Script](scripts/openstack-health-check.sh)
+
+Read-only checks for:
+
+- Keystone authentication
+- OpenStack service catalog
+- Nova Compute API
+- Neutron Networking API
+- Glance Image API
+- Cinder Block Storage API
+
+Example usage:
+
+```bash
+bash scripts/openstack-health-check.sh
+```
+
+### OpenStack Inventory Reporting
+
+[View Inventory Reporting Script](scripts/openstack-inventory-report.sh)
+
+Collects project-accessible resource information in JSON format:
+
+- Instances
+- Networks
+- Subnets
+- Routers
+- Images
+- Volumes
 - Security groups
-- Network connectivity troubleshooting
 
-### 4. Storage — Glance & Cinder
+Example usage:
 
-- Image management
-- Block volume provisioning
-- Volume attachment
-- Storage troubleshooting
+```bash
+bash scripts/openstack-inventory-report.sh
+```
 
-### 5. Identity — Keystone
+Both scripts require OpenStackClient and an authenticated OpenStack environment.
 
-- Projects and users
-- Roles and permissions
-- Service authentication
-- Access management
+## Network Design
 
-### 6. Cloud Operations
+The networking documentation covers a reference topology with private tenant networks, virtual routers, security groups, and external connectivity.
 
-- OpenStack CLI commands
-- Service health checks
-- Instance and network troubleshooting
-- Operational documentation
+It also compares OpenStack Neutron concepts with traditional enterprise networking technologies.
 
-## Proposed Lab Architecture
+[Explore Neutron Networking](docs/neutron-networking.md)
 
-The initial design will use an isolated OpenStack lab environment.
+## Operations & Troubleshooting
 
-Planned components:
+Operational procedures cover common infrastructure incidents:
 
-- OpenStack control services
-- Compute resources
-- Virtual networking
-- Image management
-- Block storage
-- Horizon dashboard
+- Authentication failures
+- VM scheduling and provisioning issues
+- Virtual network connectivity failures
+- Floating IP routing problems
+- Image provisioning errors
+- Storage attachment failures
+- Service availability and log investigation
 
-The final topology and deployment method will be selected according to available lab resources.
+[Explore Troubleshooting Guide](docs/troubleshooting.md)
 
 ## Repository Structure
-
-Planned documentation structure:
 
 ```text
 openstack-private-cloud-lab/
@@ -109,63 +127,30 @@ openstack-private-cloud-lab/
 │   ├── glance-images.md
 │   ├── cinder-storage.md
 │   └── troubleshooting.md
-├── configs/
 ├── scripts/
-├── diagrams/
+│   ├── openstack-health-check.sh
+│   └── openstack-inventory-report.sh
+├── .gitignore
 └── README.md
 ```
 
-## Implementation Roadmap
+## Security Considerations
 
-### Phase 1 — Documentation
-
-- [ ] Document OpenStack architecture
-- [ ] Document Keystone identity management
-- [ ] Document Nova compute management
-- [ ] Document Neutron networking
-- [ ] Document Glance image management
-- [ ] Document Cinder storage
-- [ ] Prepare troubleshooting guides
-
-### Phase 2 — Configuration Examples
-
-- [ ] Add OpenStack CLI examples
-- [ ] Add virtual network configuration examples
-- [ ] Add instance provisioning examples
-- [ ] Add security group configuration examples
-- [ ] Create infrastructure diagrams
-
-### Phase 3 — Lab Validation
-
-- [ ] Prepare isolated lab infrastructure
-- [ ] Deploy a suitable OpenStack lab
-- [ ] Validate authentication
-- [ ] Create virtual networks and subnets
-- [ ] Provision test instances
-- [ ] Validate instance connectivity
-- [ ] Test persistent storage
-- [ ] Document results and troubleshooting
+- Use dedicated project-scoped accounts.
+- Apply role-based access control.
+- Restrict management and administrative access.
+- Protect authentication credentials and tokens.
+- Use trusted operating system images.
+- Apply security groups to control traffic.
+- Avoid publishing private keys and infrastructure secrets.
+- Review generated reports before sharing.
 
 ## Academic Background
 
-This portfolio is informed by an OpenStack private cloud academic laboratory project undertaken during master's studies in Global Software Development at Hochschule Fulda, Germany.
+The portfolio builds on academic exposure to OpenStack private cloud technologies during the Global Software Development master's program at Hochschule Fulda, Germany.
 
-The academic experience provided exposure to private cloud implementation, virtualization, and cloud infrastructure concepts.
-
-The configurations in this public repository are being developed separately and should not be interpreted as a reproduction of the university's internal infrastructure.
-
-## Security & Confidentiality
-
-All future configurations will use fictional hostnames, documentation-only IP addresses, and placeholder credentials.
-
-No university or enterprise production configuration, authentication secrets, or confidential infrastructure details will be published.
-
-## Current Status
-
-Documentation in progress.
-
-The public repository does not yet demonstrate a completed or validated OpenStack deployment. Lab execution evidence will be added after testing.
+The public examples use generic configurations and documentation-only addresses rather than university or enterprise infrastructure details.
 
 ## About
 
-This project highlights continued development in private cloud infrastructure, OpenStack administration, virtualization, networking, and systems engineering.
+A technical portfolio covering OpenStack private cloud administration, infrastructure operations, virtualization, networking, storage, troubleshooting, and automation.
