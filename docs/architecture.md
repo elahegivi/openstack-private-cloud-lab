@@ -3,11 +3,11 @@
 
 ## 1. Architecture Overview
 
-This document describes a proposed OpenStack private cloud lab architecture.
+This document describes a reference architecture for an OpenStack private cloud environment.
 
-The design follows common OpenStack concepts and separates control-plane services, compute workloads, and network connectivity.
+The architecture follows common OpenStack concepts and separates control-plane services, compute workloads, storage resources, and network connectivity.
 
-**Implementation status:** Proposed architecture only. Deployment and validation are pending.
+The design illustrates service responsibilities, infrastructure components, and the interactions required to provision and manage cloud resources.
 
 ## 2. Logical Architecture
 
@@ -45,6 +45,7 @@ flowchart TB
 
     USER --> HORIZON
     USER --> CLI
+
     HORIZON --> KEYSTONE
     CLI --> KEYSTONE
 
@@ -70,31 +71,31 @@ flowchart TB
     NEUTRON --> DB
 ```
 
-The diagram is a conceptual representation rather than an exact deployment topology.
+The diagram provides a conceptual representation of OpenStack service relationships.
 
-Additional agents and services may be required depending on the selected OpenStack release, networking backend, and deployment method.
+Actual deployments may include additional services, agents, and infrastructure components depending on the OpenStack release, networking backend, and deployment method.
 
 ## 3. Core Infrastructure Components
 
 ### Controller Node
 
-The controller node coordinates cloud management operations.
+The controller node coordinates cloud management operations and hosts core control-plane services.
 
 Typical services include:
 
 - Keystone identity services
 - Nova API and scheduling services
-- Neutron API and control services
+- Neutron API and networking control services
 - Glance image management
 - Cinder API and scheduling services
 - Horizon dashboard
 - Database and message broker
 
-A production deployment may distribute these services across multiple controllers for high availability.
+In high-availability environments, control-plane services can be distributed across multiple controller nodes.
 
 ### Compute Node
 
-The compute node hosts virtual machine workloads.
+Compute nodes provide the virtualization resources used to run cloud instances.
 
 Typical components include:
 
@@ -103,111 +104,179 @@ Typical components include:
 - libvirt
 - Virtual networking integration
 
-The compute node communicates with controller services to receive scheduling and management instructions.
+Nova Compute communicates with control-plane services to manage instance provisioning, lifecycle operations, and resource allocation.
 
 ### Storage Backend
 
-OpenStack supports multiple storage backends.
+OpenStack supports several storage architectures and backend technologies.
 
-This proposed lab will explore:
+The reference architecture includes:
 
 - Glance image storage
 - Cinder block volumes
 - Volume attachment to instances
-- Persistent storage concepts
+- Persistent storage management
 
-The specific storage backend will be selected during lab setup.
+Glance provides image management capabilities, while Cinder manages block storage resources.
+
+Storage backends can include local storage, LVM, Ceph, or compatible enterprise storage systems, depending on the service and deployment design.
 
 ## 4. Network Architecture
 
-The lab design distinguishes three logical network functions.
+The architecture distinguishes three logical network functions.
 
 | Network | Purpose |
 |---|---|
-| Management | Communication between OpenStack services and nodes |
+| Management | Communication between OpenStack services and infrastructure nodes |
 | Tenant | Virtual machine workload connectivity |
-| External / Provider | Connectivity outside tenant networks |
+| External / Provider | Connectivity between cloud resources and external networks |
 
-These are logical functions; they do not necessarily require three separate physical network interfaces.
+These logical networks do not necessarily require dedicated physical network interfaces.
+
+Network isolation can be implemented through appropriate physical and virtual networking configurations.
 
 ### Example Address Plan
 
 The following addresses are documentation-only examples.
 
-| Segment | Example subnet |
+| Segment | Example Subnet |
 |---|---|
 | Management | 192.0.2.0/24 |
 | Tenant Network | 198.51.100.0/24 |
 | External Network | 203.0.113.0/24 |
 
-These TEST-NET ranges are not intended for a real internet-connected deployment.
+These TEST-NET ranges are reserved for documentation and should be replaced with suitable addressing in an actual deployment.
 
-The lab will use suitable private addresses and an explicitly configured external connectivity model.
+### Network Connectivity
+
+A typical private cloud network topology includes:
+
+- Management connectivity between nodes
+- Private tenant networks
+- Virtual routers for Layer 3 connectivity
+- Security groups for traffic filtering
+- Provider networks for external access
+- Floating IP addresses for selected instances
+
+Neutron coordinates these networking resources through the configured networking backend.
 
 ## 5. OpenStack Service Responsibilities
 
 | Service | Responsibility |
 |---|---|
 | Keystone | Identity, authentication, and authorization |
-| Nova | Compute instance lifecycle |
-| Neutron | Virtual networking and connectivity |
+| Nova | Compute instance lifecycle management |
+| Neutron | Virtual networking, routing, and connectivity |
 | Glance | Image catalog and image management |
-| Cinder | Block storage management |
+| Cinder | Persistent block storage management |
 | Horizon | Web-based cloud administration |
 
-## 6. Example Instance Provisioning Workflow
+These services work together to provide an integrated private cloud environment.
+
+## 6. Instance Provisioning Workflow
+
+A typical virtual machine provisioning process includes:
 
 1. An administrator authenticates through Keystone.
-2. A compute instance is requested using Horizon or the CLI.
-3. Nova validates the request and schedules the instance.
-4. Glance provides access to the selected image.
-5. Neutron provides network connectivity and port allocation.
-6. The compute node launches the instance through its virtualization stack.
+2. A compute instance is requested using Horizon or the OpenStack CLI.
+3. Nova processes the request and schedules the instance on a suitable compute host.
+4. Glance provides access to the selected operating system image.
+5. Neutron allocates the required networking resources.
+6. The compute node launches the instance through KVM/libvirt.
 7. The instance becomes available for connectivity and operational checks.
 
-This is a simplified workflow; actual provisioning involves additional service interactions.
+This workflow is simplified to highlight the main infrastructure components.
+
+Actual instance provisioning includes additional internal service communication and resource allocation operations.
 
 ## 7. Availability and Scaling
 
-The initial lab will prioritize understanding and reproducibility over high availability.
+OpenStack supports different infrastructure deployment models, from compact development environments to distributed cloud platforms.
 
-Future enhancements may include:
+Scalability and availability considerations include:
 
 - Multiple compute nodes
 - Controller high availability
-- Additional network segments
+- Distributed networking components
 - Storage redundancy
 - Monitoring and alerting
 - Automated provisioning
+- Capacity management
+
+The architecture can be extended according to workload requirements, infrastructure resources, and availability objectives.
 
 ## 8. Security Considerations
 
-- Use role-based access through Keystone.
-- Limit management network access.
+Security controls should be implemented across identity, networking, compute, and storage components.
+
+Key considerations include:
+
+- Use role-based access control through Keystone.
+- Restrict management network access.
 - Apply Neutron security groups.
+- Separate administrative and ordinary user permissions.
 - Avoid embedding credentials in scripts.
-- Protect administrative API endpoints.
-- Use TLS for service endpoints where supported.
-- Document and review external network access.
+- Protect API endpoints using TLS.
+- Review external network connectivity.
+- Monitor authentication and administrative activities.
+- Protect storage backends and sensitive data.
+- Maintain appropriate logging and audit procedures.
 
-## 9. Proposed Validation Plan
+## 9. Architecture Verification Checklist
 
-- [ ] Select an OpenStack release and deployment method
-- [ ] Define the final network addressing scheme
-- [ ] Prepare controller and compute resources
-- [ ] Install and configure OpenStack services
-- [ ] Validate Keystone authentication
-- [ ] Upload a test image to Glance
-- [ ] Configure tenant networking
-- [ ] Launch a test instance
-- [ ] Verify instance network connectivity
-- [ ] Attach and verify a Cinder volume
-- [ ] Capture execution logs and screenshots
+### Control Plane
 
-## 10. Current Status
+- [ ] Verify Keystone authentication
+- [ ] Verify Nova API availability
+- [ ] Verify Neutron API availability
+- [ ] Verify Glance image service
+- [ ] Verify Cinder block storage service
+- [ ] Verify Horizon dashboard access
 
-This document presents a proposed technical architecture.
+### Compute
 
-No end-to-end OpenStack deployment has yet been validated as part of this public portfolio repository.
+- [ ] Verify compute node availability
+- [ ] Inspect hypervisor resources
+- [ ] Confirm image and flavor availability
+- [ ] Provision a virtual machine instance
+- [ ] Verify instance lifecycle operations
 
-The architecture and configuration details will be updated based on actual lab results.
+### Networking
+
+- [ ] Verify tenant network configuration
+- [ ] Verify subnet and gateway settings
+- [ ] Verify router connectivity
+- [ ] Inspect security group rules
+- [ ] Validate floating IP connectivity
+- [ ] Verify instance network communication
+
+### Storage
+
+- [ ] Verify image storage availability
+- [ ] Verify Cinder storage backend
+- [ ] Create a block storage volume
+- [ ] Attach the volume to an instance
+- [ ] Verify persistent storage access
+
+### Operations
+
+- [ ] Review service logs
+- [ ] Verify service health
+- [ ] Inspect infrastructure resource utilization
+- [ ] Document troubleshooting procedures
+- [ ] Record configuration and verification results
+
+## 10. Related Documentation
+
+- [Keystone Identity Management](keystone-identity.md)
+- [Nova Compute Management](nova-compute.md)
+- [Neutron Networking](neutron-networking.md)
+- [Glance Image Management](glance-images.md)
+- [Cinder Block Storage](cinder-storage.md)
+- [Operations and Troubleshooting](troubleshooting.md)
+
+## 11. References
+
+- [OpenStack Documentation](https://docs.openstack.org/)
+- [OpenStack Architecture Design Guide](https://docs.openstack.org/arch-design/)
+- [OpenStack Operations Guide](https://docs.openstack.org/operations-guide/)
