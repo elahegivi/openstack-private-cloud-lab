@@ -3,31 +3,29 @@
 
 ## 1. Overview
 
-Keystone is the identity service of OpenStack.
+Keystone is the OpenStack Identity service responsible for authentication, authorization, and service catalog management.
 
-It provides authentication, authorization, and service catalog functionality for an OpenStack cloud.
+It provides centralized identity and access management for users, projects, and OpenStack services.
 
-This document describes common Keystone administration tasks and a proposed identity management scenario for an isolated private cloud lab.
-
-**Status:** Configuration examples prepared. Lab validation pending.
+This document covers Keystone architecture, identity administration, role-based access control, authentication workflows, security, and troubleshooting.
 
 ## 2. Keystone Responsibilities
 
-Keystone provides:
+Core capabilities include:
 
 - User authentication
-- Project and domain management
+- Domain and project management
 - Role-based access control (RBAC)
 - Token-based authentication
 - Service catalog and endpoint management
-- Identity integration capabilities
+- Identity federation and external identity integration
 
 ## 3. Identity Management Architecture
 
 ```mermaid
 flowchart TD
     ADMIN["Cloud Administrator"]
-    CLI["OpenStack CLI / Horizon"]
+    CLIENT["OpenStack CLI / Horizon"]
     KEYSTONE["Keystone Identity Service"]
 
     DOMAIN["Domain"]
@@ -35,9 +33,10 @@ flowchart TD
     USER["User"]
     ROLE["Role Assignment"]
     TOKEN["Authentication Token"]
+    API["OpenStack Service APIs"]
 
-    ADMIN --> CLI
-    CLI --> KEYSTONE
+    ADMIN --> CLIENT
+    CLIENT --> KEYSTONE
 
     KEYSTONE --> DOMAIN
     DOMAIN --> PROJECT
@@ -47,16 +46,19 @@ flowchart TD
     PROJECT --> ROLE
 
     KEYSTONE --> TOKEN
-    TOKEN --> CLI
+    CLIENT -->|"Token"| API
+    API -. "Token Validation" .-> KEYSTONE
 ```
 
-The diagram is conceptual and simplifies the Keystone authentication and authorization process.
+The diagram illustrates the relationship between identity resources, authentication tokens, and OpenStack services.
 
-## 4. Lab Scenario
+Actual authorization decisions depend on service-specific policies and token scope.
 
-The proposed lab uses a dedicated project for infrastructure testing.
+## 4. Identity Management Scenario
 
-Example objects:
+A dedicated OpenStack project provides logical separation for infrastructure resources and access permissions.
+
+### Example Identity Resources
 
 | Object | Example |
 |---|---|
@@ -64,32 +66,40 @@ Example objects:
 | Project | infrastructure-lab |
 | User | lab-operator |
 | Role | member |
-| Purpose | Manage lab resources with project-scoped access |
+| Access Scope | Project |
+| Purpose | Manage resources within the assigned project |
 
-A member role does not automatically grant unrestricted administrative permissions.
+The `member` role provides project-scoped permissions according to the active service policies.
 
-Actual access depends on the deployed OpenStack policies and role assignments.
+It does not automatically grant unrestricted cloud administration privileges.
 
 ## 5. Prerequisites
 
-The commands below require:
+Keystone administration requires:
 
-- A working OpenStack deployment
+- An accessible OpenStack environment
 - OpenStackClient installed
-- An authenticated administrative session
-- Appropriate permissions for identity management
+- Valid authentication credentials
+- Appropriate identity management permissions
+- Correct domain and project configuration
 
-Example command to check authentication:
+Verify authentication:
 
 ```bash
 openstack token issue
 ```
 
-Do not commit real authentication credentials, application credentials, or administrative RC files to this repository.
+List configured identity endpoints:
 
-## 6. Create a Project
+```bash
+openstack endpoint list --service identity
+```
 
-Create a dedicated project:
+Authentication credentials and administrative RC files must be protected.
+
+## 6. Project Management
+
+### Create a Project
 
 ```bash
 openstack project create \
@@ -98,15 +108,23 @@ openstack project create \
   infrastructure-lab
 ```
 
-Verify:
+### Verify the Project
 
 ```bash
 openstack project show infrastructure-lab
 ```
 
-## 7. Create a User
+### List Projects
 
-Create a lab user interactively:
+```bash
+openstack project list
+```
+
+Projects provide a scope for resource ownership, quotas, and access control.
+
+## 7. User Management
+
+### Create a User
 
 ```bash
 openstack user create \
@@ -115,23 +133,33 @@ openstack user create \
   lab-operator
 ```
 
-Verify:
+The interactive password prompt avoids exposing the password directly in the command line.
+
+### Verify the User
 
 ```bash
 openstack user show lab-operator
 ```
 
-Using an interactive password prompt avoids placing a password directly in the command line.
+### List Users
 
-## 8. Assign a Role
+```bash
+openstack user list
+```
 
-Check available roles:
+User accounts should be managed according to organizational identity and access management policies.
+
+## 8. Role-Based Access Control
+
+Keystone uses role assignments to associate users or groups with permissions within a specific scope.
+
+### List Available Roles
 
 ```bash
 openstack role list
 ```
 
-Assign the member role to the user within the project:
+### Assign a Project Role
 
 ```bash
 openstack role add \
@@ -140,7 +168,9 @@ openstack role add \
   member
 ```
 
-Verify the assignment:
+The example assumes a role named `member` exists.
+
+### Verify Role Assignment
 
 ```bash
 openstack role assignment list \
@@ -149,86 +179,165 @@ openstack role assignment list \
   --names
 ```
 
-The lab assumes that a role named `member` exists. Role names and default policy behavior may vary by deployment.
-
-## 9. List Identity Resources
-
-List projects:
+### Remove a Role Assignment
 
 ```bash
-openstack project list
+openstack role remove \
+  --project infrastructure-lab \
+  --user lab-operator \
+  member
 ```
 
-List users:
+Role removal changes the user's access to project resources and should be performed only as an authorized administrative operation.
 
-```bash
-openstack user list
-```
+## 9. Authentication Workflow
 
-List roles:
+A typical project-scoped authentication process includes:
 
-```bash
-openstack role list
-```
+1. A client sends an authentication request to Keystone.
+2. Keystone validates the supplied identity credentials.
+3. Keystone evaluates the requested project scope.
+4. Keystone issues an authentication token.
+5. The client submits the token when accessing an OpenStack API.
+6. The target service validates the token and applies its authorization policies.
 
-Show token information:
+### Authentication vs. Authorization
+
+| Authentication | Authorization |
+|---|---|
+| Confirms identity | Determines permitted actions |
+| Uses credentials or other authentication methods | Uses roles, scope, and service policies |
+| Managed through Keystone | Enforced by OpenStack services |
+| Produces an authenticated context | Controls resource operations |
+
+## 10. Token Management
+
+Inspect authentication information:
 
 ```bash
 openstack token issue
 ```
 
-## 10. Authentication Workflow
+The command can display token-related information, including the token identifier and expiration.
 
-A typical project-scoped authentication flow is:
+Treat authentication tokens as sensitive credentials.
 
-1. A user submits credentials to Keystone.
-2. Keystone validates the identity.
-3. Keystone evaluates the requested scope.
-4. Keystone issues an authentication token.
-5. Other OpenStack services validate the token and enforce their own authorization policies.
+Avoid copying token output into public logs, documentation, or repositories.
 
-Authentication proves identity; authorization determines permitted operations.
+### Token Considerations
 
-## 11. Security Best Practices
+- Tokens have a defined validity period.
+- Project-scoped tokens are associated with a project context.
+- Services validate tokens before authorizing requests.
+- Expired or invalid tokens cause authentication failures.
+- Token permissions depend on assigned roles and service policies.
 
-- Apply least-privilege access.
-- Separate administrative and ordinary user accounts.
-- Use project-scoped assignments when possible.
-- Protect authentication tokens and credentials.
-- Use TLS for identity service endpoints.
-- Review role assignments periodically.
-- Avoid publishing credentials in repositories.
-- Use secure secret storage for automation.
+## 11. Domain and Project Organization
 
-## 12. Troubleshooting
+Keystone domains provide an administrative boundary for identity resources.
+
+Projects organize cloud resources and support project-scoped access control.
+
+A conceptual structure:
+
+```text
+Default Domain
+│
+├── Users
+│   ├── cloud-admin
+│   └── lab-operator
+│
+├── Projects
+│   └── infrastructure-lab
+│
+└── Roles
+    ├── admin
+    ├── member
+    └── reader
+```
+
+Role availability and default role names may differ between OpenStack deployments.
+
+## 12. Security Best Practices
+
+### Least Privilege
+
+Assign users only the permissions required for their responsibilities.
+
+Avoid unnecessary administrative role assignments.
+
+### Administrative Separation
+
+Separate cloud administrator accounts from ordinary project user accounts.
+
+### Credential Protection
+
+- Do not store plaintext passwords in scripts.
+- Protect authentication tokens.
+- Avoid committing credentials to source control.
+- Use approved secret management solutions.
+- Protect administrative RC files.
+
+### Network Security
+
+- Restrict access to identity service endpoints.
+- Use TLS for API communication.
+- Monitor authentication errors.
+- Review administrative activity.
+
+### Access Reviews
+
+Periodically review:
+
+- User accounts
+- Project membership
+- Role assignments
+- Service permissions
+- Unused or inactive credentials
+
+## 13. Troubleshooting
 
 ### Authentication Failure
+
+**Symptom:** OpenStack CLI cannot authenticate.
 
 Check:
 
 - Keystone API availability
 - Authentication endpoint
 - Username and domain
-- Password or credential validity
+- Password validity
 - Authentication method
+- Project scope
 
-Useful commands:
+Commands:
 
 ```bash
 openstack token issue
 openstack endpoint list --service identity
 ```
 
+For additional diagnostic information:
+
+```bash
+openstack --debug token issue
+```
+
+Debug output may contain sensitive information and must be sanitized before sharing.
+
 ### Authorization Failure
+
+**Symptom:** A user authenticates successfully but cannot perform an operation.
 
 Check:
 
-- User role assignments
+- Role assignments
 - Project scope
 - Service policy configuration
-- Required permissions for the attempted operation
+- Required permissions
+- Token scope
 
-Useful command:
+Command:
 
 ```bash
 openstack role assignment list \
@@ -238,30 +347,82 @@ openstack role assignment list \
 
 ### Project Access Issues
 
-Verify the project exists:
+**Symptom:** A user cannot access the expected project.
+
+Verify the project:
 
 ```bash
 openstack project show infrastructure-lab
 ```
 
-Verify that the user has the expected project-scoped role assignment.
+Verify role assignments:
 
-## 13. Lab Validation Checklist
+```bash
+openstack role assignment list \
+  --project infrastructure-lab \
+  --user lab-operator \
+  --names
+```
 
-- [ ] Authenticate as an administrator
-- [ ] Create the infrastructure-lab project
-- [ ] Create the lab-operator user
-- [ ] Assign the member role
+Confirm that the user authenticates with the intended project and domain.
+
+### Identity Endpoint Failure
+
+**Symptom:** Authentication requests fail because the identity service is unreachable.
+
+Check:
+
+- DNS resolution
+- Network connectivity
+- API endpoint configuration
+- TLS certificate validity
+- Reverse proxy or web server status
+- Keystone application logs
+- Supporting database availability
+
+The relevant service names and log paths depend on the deployment architecture.
+
+## 14. Operational Verification Checklist
+
+### Identity Service
+
+- [ ] Verify Keystone API reachability
+- [ ] Confirm successful authentication
+- [ ] Inspect identity endpoints
+- [ ] Review identity service logs
+
+### Project and User Management
+
+- [ ] Verify project creation
+- [ ] Verify user creation
+- [ ] Inspect domain assignments
+- [ ] Confirm project visibility
+
+### Authorization
+
+- [ ] Verify available roles
+- [ ] Assign a project-scoped role
 - [ ] Verify role assignments
-- [ ] Authenticate as lab-operator
-- [ ] Verify accessible projects
-- [ ] Confirm expected permissions
-- [ ] Capture sanitized execution evidence
+- [ ] Confirm expected access permissions
+- [ ] Test unauthorized access restrictions
 
-## 14. Current Status
+### Security
 
-This document provides proposed Keystone administration procedures and example OpenStack CLI commands.
+- [ ] Verify TLS-protected API communication
+- [ ] Review administrative role assignments
+- [ ] Check credential handling
+- [ ] Review authentication failures
+- [ ] Document access management procedures
 
-The commands have not yet been executed or validated against a public portfolio lab.
+## 15. Related Documentation
 
-Actual results, deployment-specific policies, and troubleshooting findings will be added after lab testing.
+- [OpenStack Architecture](architecture.md)
+- [Nova Compute Management](nova-compute.md)
+- [Neutron Networking](neutron-networking.md)
+- [Operations and Troubleshooting](troubleshooting.md)
+
+## 16. References
+
+- [OpenStack Keystone Documentation](https://docs.openstack.org/keystone/latest/)
+- [OpenStackClient Identity Commands](https://docs.openstack.org/python-openstackclient/latest/cli/command-objects/identity/v3/index.html)
+- [OpenStack Documentation](https://docs.openstack.org/)
