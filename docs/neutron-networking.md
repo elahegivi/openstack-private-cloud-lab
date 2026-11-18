@@ -3,11 +3,11 @@
 
 ## 1. Overview
 
-Neutron is the OpenStack Networking service. It provides virtual networks, subnets, routers, ports, security groups, and floating IP connectivity.
+Neutron is the OpenStack Networking service responsible for managing virtual networks, subnets, routers, ports, security groups, and floating IP connectivity.
 
-This document presents a proposed private cloud networking scenario and OpenStack CLI examples.
+It connects virtual machine workloads to private tenant networks and external infrastructure through configurable networking backends.
 
-**Status:** Documentation prepared. Lab validation pending.
+This document covers Neutron administration, virtual networking, routing, security, connectivity verification, and troubleshooting.
 
 ## 2. Network Architecture
 
@@ -15,7 +15,7 @@ This document presents a proposed private cloud networking scenario and OpenStac
 flowchart TB
     EXT["External / Provider Network"]
     ROUTER["Neutron Virtual Router"]
-    NET["Private Network"]
+    NET["Private Tenant Network"]
     SUBNET["Private Subnet"]
     VM1["lab-vm01"]
     VM2["lab-vm02"]
@@ -27,21 +27,23 @@ flowchart TB
     SUBNET --- VM2
 ```
 
-The diagram is conceptual. Actual network forwarding depends on the selected Neutron backend, routing implementation, and external connectivity configuration.
+The diagram represents logical network relationships. Actual packet forwarding depends on the Neutron backend, routing implementation, and physical network configuration.
 
-## 3. Key Components
+## 3. Core Networking Components
 
-| Component | Purpose |
+| Component | Responsibility |
 |---|---|
-| Network | Layer 2 connectivity for cloud resources |
-| Subnet | IP addressing, gateway and DHCP settings |
-| Port | Virtual network attachment point |
-| Router | Layer 3 connectivity between networks |
-| Security Group | Stateful traffic filtering for ports |
-| Floating IP | External address mapped to an instance port |
-| Provider Network | Connectivity to external infrastructure |
+| Network | Provides Layer 2 connectivity |
+| Subnet | Defines IP allocation, gateway, and DNS settings |
+| Port | Connects an instance or network device to a virtual network |
+| Router | Provides Layer 3 connectivity between networks |
+| Security Group | Applies stateful traffic filtering |
+| Floating IP | Maps an external address to an instance port |
+| Provider Network | Connects virtual networks to external infrastructure |
 
-## 4. Proposed Lab Scenario
+## 4. Reference Network Configuration
+
+The following example illustrates a project-isolated network with a virtual router and external connectivity.
 
 | Resource | Example |
 |---|---|
@@ -55,19 +57,21 @@ The diagram is conceptual. Actual network forwarding depends on the selected Neu
 | Instance | lab-vm01 |
 | Security Group | lab-ssh |
 
-The addresses above are documentation-only TEST-NET values. Replace them with suitable, non-overlapping private network addresses during implementation.
+The example IP addresses belong to reserved documentation ranges. Actual infrastructure requires suitable non-overlapping addresses.
 
-The lab assumes an external network named `public-net` has already been configured by a cloud administrator.
+The external network `public-net` must be configured and accessible to the project.
 
 ## 5. Prerequisites
 
-- OpenStack deployment with Neutron operational
-- OpenStackClient installed and authenticated
-- Permission to manage network resources
-- External network configured by the cloud administrator
-- Nova instance available for later connectivity testing
+Network administration requires:
 
-Verify authentication and networking resources:
+- An operational OpenStack Neutron service
+- OpenStackClient and valid authentication
+- Appropriate permissions for network resources
+- Available networking backend infrastructure
+- A configured external network for external routing
+
+Verify access:
 
 ```bash
 openstack token issue
@@ -76,7 +80,9 @@ openstack subnet list
 openstack router list
 ```
 
-## 6. Create a Private Network
+## 6. Private Network Creation
+
+Create a private network:
 
 ```bash
 openstack network create private-lab-net
@@ -88,7 +94,11 @@ Verify:
 openstack network show private-lab-net
 ```
 
-## 7. Create a Subnet
+A Neutron network provides virtual Layer 2 connectivity for attached ports.
+
+## 7. Subnet Configuration
+
+Create a subnet:
 
 ```bash
 openstack subnet create \
@@ -105,22 +115,26 @@ Verify:
 openstack subnet show private-lab-subnet
 ```
 
-The DNS server requires network connectivity to be usable. In a fully isolated environment, configure an accessible internal resolver instead.
+The DNS resolver must be reachable from the network where the instance operates.
 
-## 8. Create a Virtual Router
+Use an internal resolver where external DNS access is unavailable.
+
+## 8. Virtual Router Configuration
+
+Create a router:
 
 ```bash
 openstack router create lab-router
 ```
 
-Connect the private subnet:
+Attach the private subnet:
 
 ```bash
 openstack router add subnet \
   lab-router private-lab-subnet
 ```
 
-Connect the router to a preconfigured external network:
+Set the external gateway:
 
 ```bash
 openstack router set \
@@ -135,19 +149,19 @@ openstack router show lab-router
 openstack router list
 ```
 
-The external gateway command requires a network configured for external routing and appropriate cloud permissions.
+The external gateway requires a suitable provider network and authorized project access.
 
-## 9. Security Groups
+## 9. Security Group Management
 
-Create a security group if it does not already exist:
+Create a dedicated security group:
 
 ```bash
 openstack security group create \
-  --description "Restricted SSH access for lab instances" \
+  --description "Restricted SSH access" \
   lab-ssh
 ```
 
-Allow inbound SSH from a designated management subnet:
+Allow SSH from the authorized management subnet:
 
 ```bash
 openstack security group rule create \
@@ -157,7 +171,7 @@ openstack security group rule create \
   lab-ssh
 ```
 
-Allow ICMP echo requests from the same subnet:
+Allow ICMP from the same network:
 
 ```bash
 openstack security group rule create \
@@ -166,7 +180,7 @@ openstack security group rule create \
   lab-ssh
 ```
 
-The source range is a documentation-only placeholder. Replace it with the actual authorized management network.
+Replace the documentation-only source network with an authorized management range.
 
 Review the rules:
 
@@ -174,13 +188,13 @@ Review the rules:
 openstack security group rule list lab-ssh
 ```
 
-Avoid opening administrative ports to unrestricted sources.
+Security groups are typically applied to instance network ports. Their exact behavior depends on the networking backend and cloud policies.
 
 ## 10. Floating IP Management
 
-Floating IP addresses allow external connectivity to instances on private tenant networks when routing and security policies permit.
+Floating IPs provide external address mapping for instances on private networks.
 
-Allocate a floating IP from the external network:
+Allocate a floating IP:
 
 ```bash
 openstack floating ip create public-net
@@ -192,14 +206,14 @@ List allocated addresses:
 openstack floating ip list
 ```
 
-Associate the allocated address with the instance:
+Associate an allocated floating IP with an instance:
 
 ```bash
 openstack server add floating ip \
   lab-vm01 FLOATING_IP_ADDRESS
 ```
 
-Replace `FLOATING_IP_ADDRESS` with the actual address returned by OpenStack.
+Replace `FLOATING_IP_ADDRESS` with the address assigned by OpenStack.
 
 Verify:
 
@@ -208,7 +222,7 @@ openstack server show lab-vm01
 openstack floating ip list
 ```
 
-The instance must have a suitable Neutron port connected through a router to the external network.
+Floating IP connectivity requires appropriate router configuration, security group permissions, and external network reachability.
 
 ## 11. Network Inspection
 
@@ -218,19 +232,19 @@ List networks:
 openstack network list
 ```
 
-List subnets:
+Inspect subnets:
 
 ```bash
 openstack subnet list
 ```
 
-List routers:
+Inspect routers:
 
 ```bash
 openstack router list
 ```
 
-List instance ports:
+List ports attached to an instance:
 
 ```bash
 openstack port list --server lab-vm01
@@ -243,9 +257,11 @@ openstack security group list
 openstack security group rule list lab-ssh
 ```
 
+These commands provide visibility into virtual network resources and their configuration.
+
 ## 12. Network Connectivity Workflow
 
-A typical connection from an external management client to an instance follows this conceptual path:
+A typical inbound connection to an instance using a floating IP follows this conceptual path:
 
 ```text
 Management Client
@@ -263,19 +279,21 @@ Instance Network Port
 Virtual Machine
 ```
 
-The actual path depends on the networking backend, distributed routing configuration, and underlying physical network.
+Actual packet forwarding varies according to the deployed network architecture.
+
+Some environments use centralized routing, while others use distributed networking components.
 
 ## 13. Troubleshooting
 
 ### Instance Cannot Reach Its Gateway
 
-Check:
+Inspect:
 
-- Instance interface configuration
-- Neutron port status
-- Subnet gateway configuration
-- Virtual networking backend health
-- Security policies
+- Guest network interface configuration
+- Neutron port binding and status
+- Subnet gateway
+- Virtual networking backend
+- Security group and host firewall policies
 
 Commands:
 
@@ -285,16 +303,18 @@ openstack subnet show private-lab-subnet
 openstack router show lab-router
 ```
 
-### Floating IP Is Not Reachable
+Verify the guest operating system's interface configuration and routing table.
+
+### Floating IP Is Unreachable
 
 Check:
 
-- Floating IP association
-- Router external gateway
-- External/provider network reachability
+- Floating IP allocation and association
+- Virtual router external gateway
+- Provider network reachability
 - Security group ingress rules
-- Guest firewall
-- Physical routing and connectivity
+- Guest firewall configuration
+- Underlying physical routing
 
 Commands:
 
@@ -304,14 +324,15 @@ openstack server show lab-vm01
 openstack router show lab-router
 ```
 
-### Instance Cannot Resolve DNS
+### DNS Resolution Failure
 
 Check:
 
-- Subnet DNS configuration
+- Subnet DNS settings
 - Guest resolver configuration
-- DNS server reachability
-- Security group and egress policy
+- DNS server availability
+- Routing to the DNS server
+- Security group egress restrictions
 
 Commands:
 
@@ -320,50 +341,74 @@ openstack subnet show private-lab-subnet
 openstack port list --server lab-vm01
 ```
 
-Network troubleshooting must consider both the virtual network and its underlying physical infrastructure.
+Network troubleshooting should account for the guest operating system, virtualization layer, Neutron configuration, and underlying physical network.
 
-## 14. Neutron and Traditional Networking
+## 14. Neutron and Traditional Enterprise Networking
 
-OpenStack networking introduces concepts familiar from enterprise switching and routing.
+Neutron concepts can be compared with familiar enterprise switching and routing technologies.
 
 | Traditional Networking | OpenStack Networking |
 |---|---|
-| Layer 2 network / VLAN | Neutron network |
+| Layer 2 segment or VLAN | Neutron network |
 | IP subnet | Neutron subnet |
-| Router / Layer 3 gateway | Neutron router |
-| Switch port / virtual NIC attachment | Neutron port |
-| Stateful firewall policy | Security group |
-| NAT / external address mapping | Floating IP |
-| Physical uplink and external routing | Provider network connectivity |
+| Router or Layer 3 gateway | Neutron router |
+| Switch port or virtual NIC attachment | Neutron port |
+| Stateful firewall filtering | Security group |
+| NAT and external address mapping | Floating IP |
+| Physical uplink | Provider network connectivity |
 
-These mappings are conceptual comparisons rather than exact technical equivalences.
+These are conceptual comparisons, not exact technical equivalents.
 
-## 15. Lab Validation Checklist
+Neutron introduces software-defined network management while still depending on the underlying physical infrastructure.
 
-- [ ] Verify Neutron services and networking backend
-- [ ] Create a private network
-- [ ] Create a subnet
-- [ ] Verify IP allocation
-- [ ] Create a virtual router
-- [ ] Connect the subnet to the router
-- [ ] Configure external gateway connectivity
-- [ ] Create restricted security group rules
-- [ ] Attach an instance to the private network
+## 15. Operational Verification Checklist
+
+### Network Resources
+
+- [ ] Verify Neutron API access
+- [ ] Inspect available networks and subnets
+- [ ] Verify private network configuration
+- [ ] Inspect IP allocation and gateway settings
+
+### Routing
+
+- [ ] Verify virtual router configuration
+- [ ] Confirm subnet attachment
+- [ ] Verify external gateway configuration
+- [ ] Validate inter-network connectivity
+
+### Security
+
+- [ ] Review security group rules
+- [ ] Restrict SSH to authorized sources
+- [ ] Validate permitted ICMP traffic
+- [ ] Verify guest firewall policies
+
+### Connectivity
+
+- [ ] Inspect instance network ports
+- [ ] Verify VM-to-gateway connectivity
 - [ ] Allocate and associate a floating IP
-- [ ] Validate VM-to-gateway connectivity
-- [ ] Validate external connectivity
-- [ ] Troubleshoot an intentional connectivity failure
-- [ ] Record sanitized CLI output and screenshots
+- [ ] Verify external routing
+- [ ] Test DNS resolution
 
-## 16. Current Status
+### Troubleshooting
 
-The networking configuration and commands in this document are proposed examples.
+- [ ] Investigate a port binding issue
+- [ ] Investigate a security group connectivity failure
+- [ ] Verify provider network connectivity
+- [ ] Review relevant networking logs
+- [ ] Document configuration and verification results
 
-They have not yet been executed or validated in the public portfolio lab.
+## 16. Related Documentation
 
-Implementation evidence will be added after testing.
+- [OpenStack Architecture](architecture.md)
+- [Nova Compute Management](nova-compute.md)
+- [Keystone Identity Management](keystone-identity.md)
+- [Operations and Troubleshooting](troubleshooting.md)
 
-## References
+## 17. References
 
-- [OpenStackClient Network Commands](https://docs.openstack.org/python-openstackclient/latest/cli/command-objects/network/v2/index.html)
 - [OpenStack Neutron Documentation](https://docs.openstack.org/neutron/latest/)
+- [OpenStackClient Network Commands](https://docs.openstack.org/python-openstackclient/latest/cli/command-objects/network/v2/index.html)
+- [OpenStack Documentation](https://docs.openstack.org/)
